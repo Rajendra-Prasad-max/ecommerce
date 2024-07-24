@@ -1,37 +1,178 @@
 {% extends 'base/base.html' %}
-{% include 'base/header.html' %}
 {% load static %}
 
 {% block content %}
-
-    <section class="ftco-section contact-section bg-light">
-      <div class="container">
+<link rel="stylesheet" type="text/css" href="{% static 'css/styles.css' %}">
+<section class="ftco-section contact-section bg-light">
+    <div class="container">
         <div class="row block-9">
-          <div class="col-md-6 order-md-last d-flex">
-            <form class="bg-white p-5 contact-form" action="{% url 'register' %}" method="post">
-              {% csrf_token %} {% for field in form %}
-              
-              <div class="form-group">
-                {{field.errors}}
-                {{field.label}}:{{field}}
-              </div>
-              {% endfor %}
-              <!-- <div class="form-group">
-                {{ form.password }}
-              </div> -->
-              <div class="form-group">
-                Already have an account? Sign in <a href="{% url 'login' %}">here</a>.
-                <input type="submit" value="Register" class="btn btn-primary py-3 px-5">
-              </div> 
-              
-            </form>
-          </div>
-          <div class="col-md-6 d-flex">
-          	<div id="" class="bg-white">
-              <img src="{% static 'images/image_5.jpg' %}" width="100%" height="100%"> 
-             </div>
-           </div>
+            <div class="col-md-6 order-md-last d-flex">
+                <!-- Registration Form -->
+                <form id="register-form" class="bg-white p-5 contact-form" method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <div id="register-errors" class="alert alert-danger" style="display:none;"></div>
+                    {{ form.as_p }}
+                    {% if referrer_name %}
+                        <p>Referred by: {{ referrer_name }}</p>
+                    {% endif %}
+                    <div class="form-group">
+                        <input type="submit" value="Register" class="btn btn-primary py-3 px-5">
+                        <span id="loading-spinner" class="spinner-border spinner-border-sm ml-2" role="status" aria-hidden="true" style="display:none;"></span>
+                    </div>
+                </form>
+
+                <!-- OTP Form -->
+                <form id="otp-form" class="bg-white p-5 contact-form" action="{% url 'verify_email_otp' %}" method="post" style="display: none;">
+                    {% csrf_token %}
+                    <div id="otp-errors" class="alert alert-danger" style="display:none;"></div>
+                    <div class="alert alert-info">
+                        Please check your email for the OTP.
+                    </div>
+                    <div class="form-group">
+                        <label for="otp">OTP:</label>
+                        <input type="text" id="otp" name="otp" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <button class="btn btn-primary py-3 px-5" type="submit">Verify OTP</button>
+                    </div>
+                    <div class="form-group">
+                        <button id="resend-otp-btn" class="btn btn-secondary py-3 px-5 mt-3">Resend OTP</button>
+                        <span id="resend-loading-spinner" class="spinner-border spinner-border-sm ml-2" role="status" aria-hidden="true" style="display:none;"></span>
+                        <p id="resend-otp-timer" class="mt-2" style="display: none;"></p>
+                    </div>
+                </form>
+            </div>
+            <div class="col-md-6 d-flex">
+                <div class="bg-white">
+                    <img src="{% static 'images/image_5.jpg' %}" width="100%" height="100%" alt="Placeholder Image">
+                </div>
+            </div>
         </div>
-      </div>
-    </section>
-{% endblock %} 
+    </div>
+</section>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const registerForm = document.getElementById('register-form');
+    const otpForm = document.getElementById('otp-form');
+    const registerErrors = document.getElementById('register-errors');
+    const otpErrors = document.getElementById('otp-errors');
+    const resendOtpBtn = document.getElementById('resend-otp-btn');
+    const resendOtpTimer = document.getElementById('resend-otp-timer');
+    const loadingSpinner = document.getElementById('loading-spinner');
+    const resendLoadingSpinner = document.getElementById('resend-loading-spinner');
+
+    let resendCooldown = 30; // Cooldown time in seconds
+
+    function startResendOtpCooldown() {
+        resendOtpBtn.disabled = true;
+        resendOtpTimer.style.display = 'block';
+        let timeLeft = resendCooldown;
+
+        const timerInterval = setInterval(() => {
+            resendOtpTimer.textContent = `Resend OTP in ${timeLeft} seconds`;
+            timeLeft -= 1;
+
+            if (timeLeft < 0) {
+                clearInterval(timerInterval);
+                resendOtpBtn.disabled = false;
+                resendOtpTimer.style.display = 'none';
+            }
+        }, 1000);
+    }
+
+    registerForm.addEventListener('submit', function(event) {
+        event.preventDefault();
+        loadingSpinner.style.display = 'inline-block'; // Show the spinner
+        const formData = new FormData(registerForm);
+
+        fetch(registerForm.action, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            loadingSpinner.style.display = 'none'; // Hide the spinner
+            if (data.status === 'otp_sent') {
+                registerForm.style.display = 'none';
+                otpForm.style.display = 'block';
+                startResendOtpCooldown();
+            } else if (data.status === 'error') {
+                registerErrors.textContent = data.message;
+                registerErrors.style.display = 'block';
+            }
+        })
+        .catch(error => {
+            loadingSpinner.style.display = 'none'; // Hide the spinner in case of error
+            console.error('Error:', error);
+        });
+    });
+
+    otpForm.addEventListener('submit', function(event) {
+        event.preventDefault();
+        const formData = new FormData(otpForm);
+
+        fetch(otpForm.action, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'verified') {
+                window.location.href = '/';
+            } else if (data.status === 'error') {
+                otpErrors.textContent = data.message;
+                otpErrors.style.display = 'block';
+            }
+        })
+        .catch(error => console.error('Error:', error));
+    });
+
+    resendOtpBtn.addEventListener('click', function(event) {
+        event.preventDefault();
+        resendLoadingSpinner.style.display = 'inline-block'; // Show the spinner
+
+        const emailInput = document.querySelector('input[name="email"]');
+        if (!emailInput) {
+            console.error('Email input field not found.');
+            return;
+        }
+
+        fetch("{% url 'resend_otp' %}", {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({
+                email: emailInput.value,
+                request_type: 'register' // Set this based on whether it's a registration or login request
+            }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            resendLoadingSpinner.style.display = 'none'; // Hide the spinner
+            if (data.status === 'otp_resent') {
+                otpErrors.textContent = data.message;
+                otpErrors.style.display = 'block';
+                startResendOtpCooldown();
+            } else if (data.status === 'error') {
+                otpErrors.textContent = data.message;
+                otpErrors.style.display = 'block';
+            }
+        })
+        .catch(error => {
+            resendLoadingSpinner.style.display = 'none'; // Hide the spinner in case of error
+            console.error('Error:', error);
+        });
+    });
+});
+</script>
+{% endblock %}
